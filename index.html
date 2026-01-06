@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>RS AI Web</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: Arial, sans-serif; background: #1a1a1a; color: #f0f0f0; padding: 20px; }
+    h1 { color: #00ffff; }
+    .menu, .section { margin: 20px 0; padding: 20px; background: #2a2a2a; border-radius: 10px; }
+    button { padding: 10px 15px; margin: 5px; border-radius: 6px; border: none; cursor: pointer; }
+    button:hover { background-color: #00ffff; color: #000; }
+    input, select { padding: 8px; margin: 5px 0; border-radius: 6px; border: none; width: 100%; }
+    img { max-width: 500px; display: block; margin: 10px 0; border-radius: 10px; }
+    .spinner { border: 6px solid #f3f3f3; border-top: 6px solid #00ffff; border-radius: 50%; width: 40px; height: 40px; margin: 20px auto; animation: spin 1s linear infinite; }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+    #loadingOverlay {
+      display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7);
+      color:#fff; font-size:24px; text-align:center; line-height:100vh; z-index:9999;
+    }
+  </style>
+</head>
+<body>
+
+<div id="loadingOverlay">
+  ⏳ Please wait...
+  <div class="spinner"></div>
+</div>
+
+<h1>Welcome to RS AI Web</h1>
+
+<div class="menu">
+  <h2>Main Menu</h2>
+  <button onclick="showSection('audio')">🎤 Record & Transcribe Audio</button>
+  <button onclick="showSection('imageGen')">🖼 Generate Image from Text</button>
+  <button onclick="showSection('sentiment')">💬 Analyze Sentiment</button>
+  <button onclick="showSection('filter')">🖌 Apply Filter to Image</button>
+  <button onclick="showSection('translator')">🌎 Speech Translator</button>
+</div>
+
+<!-- Audio -->
+<div id="audio" class="section" style="display:none;">
+  <h3>Record & Transcribe Audio</h3>
+  <button id="startRec">Start Recording</button>
+  <button id="stopRec" disabled>Stop Recording</button>
+  <p id="audioResult"></p>
+</div>
+
+<!-- Image Generation -->
+<div id="imageGen" class="section" style="display:none;">
+  <h3>Generate Image from Text</h3>
+  <input type="text" id="imagePrompt" placeholder="Enter a description for the image">
+  <button onclick="generateImage()">Generate</button>
+  <img id="generatedImage" src="">
+</div>
+
+<!-- Sentiment -->
+<div id="sentiment" class="section" style="display:none;">
+  <h3>Sentiment Analysis</h3>
+  <input type="text" id="sentimentText" placeholder="Enter text to analyze">
+  <button onclick="analyzeSentiment()">Analyze</button>
+  <p id="sentimentResult"></p>
+</div>
+
+<!-- Filter -->
+<div id="filter" class="section" style="display:none;">
+  <h3>Apply Filter to Image</h3>
+  <input type="file" id="filterFile" accept="image/*">
+  <select id="filterType">
+    <option value="red_tint">Red Tint</option>
+    <option value="green_tint">Green Tint</option>
+    <option value="blue_tint">Blue Tint</option>
+    <option value="sobel">Sobel Edge</option>
+    <option value="canny">Canny Edge</option>
+  </select>
+  <button onclick="applyFilter()">Apply Filter</button>
+  <img id="filteredImage" src="">
+</div>
+
+<!-- Speech Translator -->
+<div id="translator" class="section" style="display:none;">
+  <h3>🎤 Speech Translator</h3>
+  <label for="targetLang">Choose Target Language:</label>
+  <select id="targetLang">
+    <option value="hi">Hindi</option>
+    <option value="ta">Tamil</option>
+    <option value="te">Telugu</option>
+    <option value="kn">Kannada</option>
+    <option value="ml">Malayalam</option>
+    <option value="bn">Bengali</option>
+    <option value="mr">Marathi</option>
+    <option value="gu">Gujarati</option>
+    <option value="pa">Punjabi</option>
+    <option value="es">Spanish</option>
+    <option value="fr">French</option>
+  </select>
+  <br><br>
+  <button id="startTransRec">Start Recording</button>
+  <button id="stopTransRec" disabled>Stop Recording</button>
+  <p><b>Original Speech:</b> <span id="originalSpeech"></span></p>
+  <p><b>Translated Speech:</b> <span id="translatedSpeech"></span></p>
+</div>
+
+<script>
+function showLoading(){ document.getElementById('loadingOverlay').style.display='block'; }
+function hideLoading(){ document.getElementById('loadingOverlay').style.display='none'; }
+function showSection(id){
+  document.querySelectorAll('.section').forEach(s => s.style.display='none');
+  document.getElementById(id).style.display='block';
+}
+
+// -------- Image Generation --------
+async function generateImage(){
+  const prompt = document.getElementById('imagePrompt').value.trim();
+  if(!prompt) return alert("Enter a prompt!");
+  showLoading();
+  try {
+    const formData = new FormData();
+    formData.append('prompt', prompt);
+    const resp = await fetch('/generate_image', { method:'POST', body: formData });
+    if(!resp.ok){ const j = await resp.json().catch(()=>({error:"Unknown error"})); throw new Error(j.error || "Error generating image"); }
+    const blob = await resp.blob();
+    document.getElementById('generatedImage').src = URL.createObjectURL(blob);
+  } catch(e){ alert(e.message); } finally { hideLoading(); }
+}
+
+// -------- Audio Recording & Transcription --------
+let mediaRecorder, audioChunks=[];
+document.getElementById('startRec').onclick = async () => {
+  audioChunks = [];
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true } });
+  mediaRecorder = new MediaRecorder(stream);
+  mediaRecorder.ondataavailable = e => { if(e.data.size>0) audioChunks.push(e.data); };
+  mediaRecorder.onstop = async () => {
+    showLoading();
+    try {
+      const blob = new Blob(audioChunks, { type: 'audio/webm' });
+      const form = new FormData();
+      form.append('file', blob, 'recording.webm');
+      const resp = await fetch('/transcribe_audio', { method:'POST', body: form });
+      const j = await resp.json();
+      document.getElementById('audioResult').innerText = j.transcription || j.error || 'Unknown error';
+    } catch(e){ alert(e.message); } finally { hideLoading(); }
+  };
+  mediaRecorder.start();
+  document.getElementById('startRec').disabled = true;
+  document.getElementById('stopRec').disabled = false;
+};
+document.getElementById('stopRec').onclick = () => {
+  if(mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  document.getElementById('startRec').disabled = false;
+  document.getElementById('stopRec').disabled = true;
+};
+
+// -------- Sentiment Analysis --------
+async function analyzeSentiment(){
+  const text = document.getElementById('sentimentText').value.trim();
+  if(!text) return alert("Enter text!");
+  showLoading();
+  try {
+    const form = new FormData();
+    form.append('text', text);
+    const resp = await fetch('/sentiment', { method:'POST', body: form });
+    const j = await resp.json();
+    if(resp.ok && j.label){ document.getElementById('sentimentResult').innerText = `Sentiment: ${j.label}, Score: ${(+j.score).toFixed(2)}`; }
+    else throw new Error(j.error || "Error");
+  } catch(e){ alert(e.message); } finally { hideLoading(); }
+}
+
+// -------- Image Filter --------
+async function applyFilter(){
+  const file = document.getElementById('filterFile').files[0];
+  const filter = document.getElementById('filterType').value;
+  if(!file) return alert("Upload an image!");
+  showLoading();
+  try {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('filter', filter);
+    const resp = await fetch('/filter_image', { method:'POST', body: form });
+    if(!resp.ok){ const j = await resp.json().catch(()=>({error:"Error applying filter"})); throw new Error(j.error || "Error applying filter"); }
+    const blob = await resp.blob();
+    document.getElementById('filteredImage').src = URL.createObjectURL(blob);
+  } catch(e){ alert(e.message); } finally { hideLoading(); }
+}
+
+// -------- Speech Translator --------
+let transRecorder, transChunks=[];
+document.getElementById('startTransRec').onclick = async () => {
+  transChunks = [];
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation:true } });
+  transRecorder = new MediaRecorder(stream);
+  transRecorder.ondataavailable = e => { if(e.data.size>0) transChunks.push(e.data); };
+  transRecorder.onstop = async () => {
+    showLoading();
+    try {
+      const blob = new Blob(transChunks, { type: 'audio/webm' });
+      const formData = new FormData();
+      formData.append('file', blob, 'speech.webm');
+      const resp = await fetch('/translate', { method:'POST', body: JSON.stringify({ text: "", lang: document.getElementById('targetLang').value }), headers: { 'Content-Type': 'application/json' } });
+      const j = await resp.json();
+      document.getElementById('originalSpeech').innerText = j.original || '';
+      document.getElementById('translatedSpeech').innerText = j.translated || '';
+    } catch(e){ alert(e.message); } finally { hideLoading(); }
+  };
+  transRecorder.start();
+  document.getElementById('startTransRec').disabled = true;
+  document.getElementById('stopTransRec').disabled = false;
+};
+document.getElementById('stopTransRec').onclick = () => {
+  if(transRecorder && transRecorder.state !== 'inactive') transRecorder.stop();
+  document.getElementById('startTransRec').disabled = false;
+  document.getElementById('stopTransRec').disabled = true;
+};
+</script>
+</body>
+</html>
